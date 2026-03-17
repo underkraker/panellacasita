@@ -142,6 +142,16 @@
             <button id="backupBtn" class="btn-secondary">Respaldo SQLite</button>
             <button id="expireBtn" class="btn-secondary md:col-span-2">Desactivar expirados ahora</button>
           </div>
+          <div class="mt-4 grid gap-2 md:grid-cols-4">
+            <input id="fwPort" class="input" type="number" min="1" max="65535" placeholder="Puerto" />
+            <select id="fwProtocol" class="input">
+              <option value="tcp">tcp</option>
+              <option value="udp">udp</option>
+            </select>
+            <button id="fwOpenBtn" class="btn-secondary">Abrir puerto</button>
+            <button id="fwCloseBtn" class="btn-secondary">Cerrar puerto</button>
+          </div>
+          <button id="fwStatusBtn" class="btn-secondary mt-2">Ver estado firewall</button>
         </div>
       </section>
 

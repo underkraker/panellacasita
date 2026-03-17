@@ -158,9 +158,42 @@ def ensure_memory_boost(min_ram_mb: int | None = None) -> dict:
 
 
 def install_badvpn_service(port: int = 7300) -> dict:
-    install = run_command(["/usr/bin/apt", "-y", "install", "badvpn"])
-    if not install["ok"] and "Unable to locate package" in install["stderr"]:
-        return install
+    ufw_open = run_command([settings.UFW_BIN, "allow", f"{port}/udp"])
+
+    binary_path = "/usr/bin/badvpn-udpgw"
+    if not os.path.exists(binary_path):
+        install = run_command(["/usr/bin/apt", "-y", "install", "badvpn"])
+        if install["ok"] and os.path.exists("/usr/bin/badvpn-udpgw"):
+            binary_path = "/usr/bin/badvpn-udpgw"
+        else:
+            build_deps = run_command(["/usr/bin/apt", "-y", "install", "git", "cmake", "build-essential"], timeout=180)
+            if not build_deps["ok"]:
+                return {
+                    "ok": False,
+                    "error": "No se pudo instalar badvpn ni dependencias de compilacion",
+                    "ufw": ufw_open,
+                    "deps": build_deps,
+                }
+            build = run_command(
+                [
+                    "/usr/bin/env",
+                    "bash",
+                    "-lc",
+                    "rm -rf /tmp/badvpn-src && git clone --depth 1 https://github.com/ambrop72/badvpn /tmp/badvpn-src && "
+                    "cmake -S /tmp/badvpn-src -B /tmp/badvpn-build -DBUILD_NOTHING_BY_DEFAULT=1 -DBUILD_UDPGW=1 && "
+                    "cmake --build /tmp/badvpn-build --target badvpn-udpgw -j2 && "
+                    "install -m 0755 /tmp/badvpn-build/udpgw/badvpn-udpgw /usr/local/bin/badvpn-udpgw",
+                ],
+                timeout=600,
+            )
+            if not build["ok"] or not os.path.exists("/usr/local/bin/badvpn-udpgw"):
+                return {
+                    "ok": False,
+                    "error": "No se pudo compilar badvpn-udpgw",
+                    "ufw": ufw_open,
+                    "build": build,
+                }
+            binary_path = "/usr/local/bin/badvpn-udpgw"
 
     unit = f"""[Unit]
 Description=BadVPN UDPGW
@@ -168,7 +201,7 @@ After=network.target
 
 [Service]
 Type=simple
-ExecStart=/usr/bin/badvpn-udpgw --listen-addr 127.0.0.1:{port} --max-clients 1000
+ExecStart={binary_path} --listen-addr 127.0.0.1:{port} --max-clients 1000
 Restart=always
 
 [Install]
@@ -184,7 +217,14 @@ WantedBy=multi-user.target
         return write
     run_command([settings.SYSTEMCTL_BIN, "daemon-reload"])
     run_command([settings.SYSTEMCTL_BIN, "enable", "badvpn"])
-    return run_command([settings.SYSTEMCTL_BIN, "restart", "badvpn"])
+    restart = run_command([settings.SYSTEMCTL_BIN, "restart", "badvpn"])
+    return {
+        "ok": restart["ok"],
+        "service": restart,
+        "binary": binary_path,
+        "ufw": ufw_open,
+        "port": port,
+    }
 
 
 def install_stunnel_service() -> dict:

@@ -1,6 +1,6 @@
 from flask import Blueprint, g, jsonify, request
 
-from app.services import backup_service, bandwidth_service, multilogin_service, ssh_service, system_service, user_service
+from app.services import backup_service, bandwidth_service, firewall_service, multilogin_service, ssh_service, system_service, user_service
 from app.utils.auth import require_roles
 
 
@@ -102,4 +102,37 @@ def run_backup():
 @require_roles("admin")
 def enforce_multilogin():
     result = multilogin_service.enforce_limits()
+    return jsonify(result), (200 if result.get("ok") else 500)
+
+
+@system_bp.post("/firewall/open")
+@require_roles("admin")
+def firewall_open_port():
+    data = request.get_json(silent=True) or {}
+    try:
+        port = int(data["port"])
+        protocol = str(data.get("protocol", "tcp"))
+        result = firewall_service.open_port(port, protocol)
+        return jsonify(result), (200 if result.get("ok") else 500)
+    except Exception as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 400
+
+
+@system_bp.post("/firewall/close")
+@require_roles("admin")
+def firewall_close_port():
+    data = request.get_json(silent=True) or {}
+    try:
+        port = int(data["port"])
+        protocol = str(data.get("protocol", "tcp"))
+        result = firewall_service.close_port(port, protocol)
+        return jsonify(result), (200 if result.get("ok") else 500)
+    except Exception as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 400
+
+
+@system_bp.get("/firewall/status")
+@require_roles("admin")
+def firewall_status():
+    result = firewall_service.status()
     return jsonify(result), (200 if result.get("ok") else 500)

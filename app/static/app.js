@@ -358,6 +358,37 @@ el("backupBtn").addEventListener("click", async () => {
   }
 });
 
+el("fwOpenBtn").addEventListener("click", async () => {
+  try {
+    const port = Number(el("fwPort").value);
+    const protocol = el("fwProtocol").value;
+    await api("/api/system/firewall/open", "POST", { port, protocol });
+    alert(`Puerto ${port}/${protocol} abierto`);
+  } catch (e) {
+    alert(e.message);
+  }
+});
+
+el("fwCloseBtn").addEventListener("click", async () => {
+  try {
+    const port = Number(el("fwPort").value);
+    const protocol = el("fwProtocol").value;
+    await api("/api/system/firewall/close", "POST", { port, protocol });
+    alert(`Puerto ${port}/${protocol} cerrado`);
+  } catch (e) {
+    alert(e.message);
+  }
+});
+
+el("fwStatusBtn").addEventListener("click", async () => {
+  try {
+    const data = await api("/api/system/firewall/status");
+    el("sysInfoText").textContent = data.stdout || data.stderr || "Sin datos";
+  } catch (e) {
+    alert(e.message);
+  }
+});
+
 el("expireBtn").addEventListener("click", async () => {
   try {
     await api("/api/system/expire/run", "POST");
