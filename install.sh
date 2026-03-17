@@ -19,16 +19,99 @@ if ! command -v git >/dev/null 2>&1; then
   apt install -y git
 fi
 
-read -rp "Dominio (DuckDNS o propio): " DOMAIN
-read -rp "Token DuckDNS (si no aplica, enter): " DUCKDNS_TOKEN
-read -rp "Puerto del panel (ej 2053/8443): " PANEL_PORT
-read -rp "Usuario admin inicial: " ADMIN_USER
-read -rsp "Password admin inicial: " ADMIN_PASS
-echo
-read -rp "URL del repositorio para autoupdates [https://github.com/underkraker/panellacasita.git]: " REPO_URL
-REPO_URL="${REPO_URL:-https://github.com/underkraker/panellacasita.git}"
-read -rp "Rama para autoupdates [main]: " REPO_BRANCH
-REPO_BRANCH="${REPO_BRANCH:-main}"
+DOMAIN="${PANEL_DOMAIN:-}"
+DUCKDNS_TOKEN="${PANEL_DUCKDNS_TOKEN:-}"
+PANEL_PORT="${PANEL_PORT:-}"
+ADMIN_USER="${PANEL_ADMIN_USER:-}"
+ADMIN_PASS="${PANEL_ADMIN_PASS:-}"
+REPO_URL="${PANEL_REPO_URL:-https://github.com/underkraker/panellacasita.git}"
+REPO_BRANCH="${PANEL_REPO_BRANCH:-main}"
+NON_INTERACTIVE=0
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --domain)
+      DOMAIN="$2"
+      shift 2
+      ;;
+    --duckdns-token)
+      DUCKDNS_TOKEN="$2"
+      shift 2
+      ;;
+    --panel-port)
+      PANEL_PORT="$2"
+      shift 2
+      ;;
+    --admin-user)
+      ADMIN_USER="$2"
+      shift 2
+      ;;
+    --admin-pass)
+      ADMIN_PASS="$2"
+      shift 2
+      ;;
+    --repo-url)
+      REPO_URL="$2"
+      shift 2
+      ;;
+    --repo-branch)
+      REPO_BRANCH="$2"
+      shift 2
+      ;;
+    --non-interactive)
+      NON_INTERACTIVE=1
+      shift
+      ;;
+    *)
+      echo "[ERROR] Opcion no soportada: $1"
+      exit 1
+      ;;
+  esac
+done
+
+if [[ -z "${DOMAIN}" ]]; then
+  if [[ ${NON_INTERACTIVE} -eq 1 ]]; then
+    echo "[ERROR] Falta --domain"
+    exit 1
+  fi
+  read -rp "Dominio (DuckDNS o propio): " DOMAIN
+fi
+if [[ -z "${PANEL_PORT}" ]]; then
+  if [[ ${NON_INTERACTIVE} -eq 1 ]]; then
+    echo "[ERROR] Falta --panel-port"
+    exit 1
+  fi
+  read -rp "Puerto del panel (ej 2053/8443): " PANEL_PORT
+fi
+if [[ -z "${ADMIN_USER}" ]]; then
+  if [[ ${NON_INTERACTIVE} -eq 1 ]]; then
+    echo "[ERROR] Falta --admin-user"
+    exit 1
+  fi
+  read -rp "Usuario admin inicial: " ADMIN_USER
+fi
+if [[ -z "${ADMIN_PASS}" ]]; then
+  if [[ ${NON_INTERACTIVE} -eq 1 ]]; then
+    echo "[ERROR] Falta --admin-pass"
+    exit 1
+  fi
+  read -rsp "Password admin inicial: " ADMIN_PASS
+  echo
+fi
+if [[ ${NON_INTERACTIVE} -eq 0 ]]; then
+  read -rp "Token DuckDNS (si no aplica, enter): " input_duckdns
+  if [[ -n "${input_duckdns}" ]]; then
+    DUCKDNS_TOKEN="${input_duckdns}"
+  fi
+  read -rp "URL del repositorio para autoupdates [${REPO_URL}]: " input_repo_url
+  if [[ -n "${input_repo_url}" ]]; then
+    REPO_URL="${input_repo_url}"
+  fi
+  read -rp "Rama para autoupdates [${REPO_BRANCH}]: " input_repo_branch
+  if [[ -n "${input_repo_branch}" ]]; then
+    REPO_BRANCH="${input_repo_branch}"
+  fi
+fi
 
 if [[ -z "${DOMAIN}" || -z "${PANEL_PORT}" || -z "${ADMIN_USER}" || -z "${ADMIN_PASS}" ]]; then
   echo "[ERROR] Todos los campos salvo token son obligatorios"
