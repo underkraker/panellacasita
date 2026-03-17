@@ -36,7 +36,7 @@ apt update
 apt install -y \
   python3.12 python3.12-venv python3-pip \
   nginx certbot python3-certbot-nginx \
-  ufw curl rsync openssh-server dropbear badvpn stunnel4
+  ufw curl rsync openssh-server dropbear stunnel4
 
 if ! command -v xray >/dev/null 2>&1; then
   curl -fsSL https://github.com/XTLS/Xray-install/raw/main/install-release.sh | bash
@@ -136,6 +136,10 @@ systemctl restart nginx
 
 certbot --nginx -d "${DOMAIN}" --non-interactive --agree-tos -m "admin@${DOMAIN#*.}" --redirect
 
+cat >/etc/cron.d/mi-panel-cert-renew <<'EOF'
+17 3 * * * root /usr/bin/env bash -lc 'ufw allow 80/tcp >/dev/null 2>&1; certbot renew --quiet --deploy-hook "systemctl reload nginx"; ufw --force delete allow 80/tcp >/dev/null 2>&1'
+EOF
+
 cat >"/etc/nginx/sites-available/mi-panel.conf" <<EOF
 server {
     listen 80;
@@ -173,10 +177,7 @@ ufw --force reset
 ufw default deny incoming
 ufw default allow outgoing
 ufw allow 22/tcp
-ufw allow 80/tcp
-ufw allow 443/tcp
 ufw allow "${PANEL_PORT}"/tcp
-ufw allow 7300/udp
 ufw --force enable
 
 systemctl daemon-reload
