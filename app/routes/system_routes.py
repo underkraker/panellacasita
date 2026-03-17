@@ -105,6 +105,13 @@ def enforce_multilogin():
     return jsonify(result), (200 if result.get("ok") else 500)
 
 
+@system_bp.post("/autoupdate/run")
+@require_roles("admin")
+def autoupdate_now():
+    result = system_service.run_autoupdate_now()
+    return jsonify(result), (200 if result.get("ok") else 500)
+
+
 @system_bp.post("/firewall/open")
 @require_roles("admin")
 def firewall_open_port():

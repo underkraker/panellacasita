@@ -341,3 +341,14 @@ WantedBy=multi-user.target
     run_command([settings.SYSTEMCTL_BIN, "daemon-reload"])
     run_command([settings.SYSTEMCTL_BIN, "enable", "panel-wstunnel"])
     return run_command([settings.SYSTEMCTL_BIN, "restart", "panel-wstunnel"])
+
+
+def run_autoupdate_now() -> dict:
+    service = "mi-panel-autoupdate.service"
+    start = run_command([settings.SYSTEMCTL_BIN, "start", service], timeout=120)
+    status = run_command([settings.SYSTEMCTL_BIN, "status", service, "--no-pager"], timeout=60)
+    return {
+        "ok": start.get("ok", False),
+        "start": start,
+        "status": status,
+    }

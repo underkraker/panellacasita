@@ -358,6 +358,15 @@ el("backupBtn").addEventListener("click", async () => {
   }
 });
 
+el("autoupdateBtn").addEventListener("click", async () => {
+  try {
+    await api("/api/system/autoupdate/run", "POST");
+    alert("Actualizacion ejecutada. El panel puede reiniciarse unos segundos.");
+  } catch (e) {
+    alert(e.message);
+  }
+});
+
 el("fwOpenBtn").addEventListener("click", async () => {
   try {
     const port = Number(el("fwPort").value);
