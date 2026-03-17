@@ -1,0 +1,66 @@
+.panel-card {
+  border: 1px solid rgb(51 65 85);
+  background: linear-gradient(145deg, rgba(15, 23, 42, 0.95), rgba(30, 41, 59, 0.75));
+  border-radius: 1rem;
+  padding: 1rem;
+  box-shadow: 0 12px 28px rgba(2, 6, 23, 0.4);
+}
+
+.title {
+  font-size: 1rem;
+  font-weight: 700;
+  margin-bottom: 0.75rem;
+}
+
+.label {
+  color: rgb(148 163 184);
+  font-size: 0.78rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.value {
+  margin-top: 0.25rem;
+  font-size: 1.7rem;
+  font-weight: 700;
+}
+
+.input {
+  width: 100%;
+  border: 1px solid rgb(71 85 105);
+  border-radius: 0.75rem;
+  background: rgba(15, 23, 42, 0.75);
+  color: rgb(226 232 240);
+  padding: 0.6rem 0.7rem;
+}
+
+.btn-primary,
+.btn-secondary {
+  border-radius: 0.75rem;
+  padding: 0.6rem 0.7rem;
+  font-weight: 600;
+}
+
+.btn-primary {
+  background: linear-gradient(90deg, rgb(14 116 144), rgb(34 197 94));
+  color: white;
+}
+
+.btn-secondary {
+  background: rgb(30 41 59);
+  border: 1px solid rgb(71 85 105);
+  color: rgb(226 232 240);
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.table th,
+.table td {
+  border-bottom: 1px solid rgb(51 65 85);
+  padding: 0.5rem;
+  text-align: left;
+  font-size: 0.9rem;
+}

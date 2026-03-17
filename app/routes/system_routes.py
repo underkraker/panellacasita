@@ -1,0 +1,105 @@
+from flask import Blueprint, g, jsonify, request
+
+from app.services import backup_service, bandwidth_service, multilogin_service, ssh_service, system_service, user_service
+from app.utils.auth import require_roles
+
+
+system_bp = Blueprint("system", __name__)
+
+
+@system_bp.get("/metrics")
+@require_roles("user")
+def metrics():
+    return jsonify(system_service.realtime_metrics()), 200
+
+
+@system_bp.get("/info")
+@require_roles("user")
+def info():
+    return jsonify(system_service.system_info()), 200
+
+
+@system_bp.post("/tuning/bbr")
+@require_roles("admin")
+def enable_bbr():
+    result = system_service.enable_bbr()
+    return jsonify(result), (200 if result.get("ok") else 500)
+
+
+@system_bp.post("/cleanup")
+@require_roles("admin")
+def cleanup():
+    result = system_service.clean_ram_and_logs()
+    return jsonify(result), (200 if result.get("ok") else 500)
+
+
+@system_bp.post("/memory/boost")
+@require_roles("admin")
+def memory_boost():
+    result = system_service.ensure_memory_boost()
+    return jsonify(result), (200 if result.get("ok") else 500)
+
+
+@system_bp.post("/badvpn/install")
+@require_roles("admin")
+def badvpn_install():
+    result = system_service.install_badvpn_service(7300)
+    return jsonify(result), (200 if result.get("ok") else 500)
+
+
+@system_bp.post("/ws-tunnel/install")
+@require_roles("admin")
+def ws_tunnel_install():
+    result = system_service.install_ws_tunnel_service()
+    return jsonify(result), (200 if result.get("ok") else 500)
+
+
+@system_bp.post("/dropbear/install")
+@require_roles("admin")
+def dropbear_install():
+    result = ssh_service.ensure_dropbear()
+    return jsonify(result), (200 if result.get("ok") else 500)
+
+
+@system_bp.post("/stunnel/install")
+@require_roles("admin")
+def stunnel_install():
+    result = system_service.install_stunnel_service()
+    return jsonify(result), (200 if result.get("ok") else 500)
+
+
+@system_bp.post("/expire/run")
+@require_roles("admin")
+def run_expire_jobs():
+    xray = user_service.deactivate_expired_users()
+    ssh = ssh_service.expire_ssh_users()
+    return jsonify({"ok": True, "xray": xray, "ssh": ssh}), 200
+
+
+@system_bp.post("/bandwidth/collect")
+@require_roles("admin")
+def collect_bandwidth():
+    result = bandwidth_service.collect_xray_bandwidth_snapshot()
+    return jsonify(result), (200 if result.get("ok") else 500)
+
+
+@system_bp.get("/bandwidth/users")
+@require_roles("user")
+def bandwidth_by_users():
+    hours = request.args.get("hours", "24")
+    result = bandwidth_service.get_bandwidth_by_user(int(hours), g.account)
+    return jsonify(result), 200
+
+
+@system_bp.post("/backup/run")
+@require_roles("admin")
+def run_backup():
+    result = backup_service.run_backup()
+    return jsonify(result), (200 if result.get("ok") else 500)
+
+
+@system_bp.post("/multilogin/enforce")
+@require_roles("admin")
+def enforce_multilogin():
+    result = multilogin_service.enforce_limits()
+    return jsonify(result), (200 if result.get("ok") else 500)

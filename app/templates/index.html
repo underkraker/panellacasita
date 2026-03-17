@@ -1,0 +1,172 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Panel VPS Pro</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link rel="stylesheet" href="/static/style.css" />
+  </head>
+  <body class="bg-slate-950 text-slate-100">
+    <main class="mx-auto max-w-7xl p-4 md:p-8">
+      <header class="mb-6 rounded-2xl border border-slate-800 bg-slate-900/80 p-4 backdrop-blur">
+        <h1 class="text-2xl font-bold tracking-tight md:text-3xl">Panel VPS LaCasita+ (Ubuntu 22/24)</h1>
+        <p class="mt-1 text-sm text-slate-400">SSH/Dropbear, WebSocket+SSL, Xray-core, BadVPN, Resellers y tuning del sistema.</p>
+      </header>
+
+      <section class="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+        <article class="panel-card">
+          <p class="label">CPU</p>
+          <p id="cpuValue" class="value">0%</p>
+        </article>
+        <article class="panel-card">
+          <p class="label">RAM usada</p>
+          <p id="ramValue" class="value">0 MB</p>
+        </article>
+        <article class="panel-card">
+          <p class="label">Cuenta</p>
+          <p id="whoami" class="value text-lg">Sin sesion</p>
+        </article>
+        <article class="panel-card">
+          <p class="label">Creditos reseller</p>
+          <p id="creditsValue" class="value">-</p>
+        </article>
+      </section>
+
+      <section class="mt-4 grid gap-4 xl:grid-cols-3">
+        <div class="panel-card xl:col-span-2">
+          <div class="mb-2 flex items-center justify-between">
+            <h2 class="title">Monitoreo en tiempo real</h2>
+            <button id="refreshMetricsBtn" class="btn-secondary">Refrescar</button>
+          </div>
+          <canvas id="metricsChart" height="110"></canvas>
+        </div>
+
+        <div class="panel-card">
+          <h2 class="title">Login</h2>
+          <div class="space-y-2">
+            <input id="username" class="input" type="text" placeholder="Usuario" />
+            <input id="password" class="input" type="password" placeholder="Password" />
+            <button id="loginBtn" class="btn-primary w-full">Iniciar sesion</button>
+          </div>
+        </div>
+      </section>
+
+      <section class="mt-4 panel-card">
+        <h2 class="title">Mi Perfil</h2>
+        <p class="mb-3 text-sm text-slate-400">Por seguridad, cambie sus credenciales en esta seccion.</p>
+        <div class="grid gap-2 md:grid-cols-4">
+          <input id="profileUser" class="input" placeholder="Nuevo usuario (opcional)" />
+          <input id="profileCurrentPass" class="input" type="password" placeholder="Password actual" />
+          <input id="profileNewPass" class="input" type="password" placeholder="Nuevo password" />
+          <button id="profileSaveBtn" class="btn-primary">Actualizar perfil</button>
+        </div>
+      </section>
+
+      <section class="mt-4 panel-card">
+        <div class="mb-2 flex items-center justify-between">
+          <h2 class="title">Consumo por usuario (Xray)</h2>
+          <div class="flex gap-2">
+            <select id="bandwidthRange" class="input">
+              <option value="1">1h</option>
+              <option value="24" selected>24h</option>
+              <option value="168">7d</option>
+            </select>
+            <button id="refreshBandwidthBtn" class="btn-secondary">Refrescar consumo</button>
+          </div>
+        </div>
+        <canvas id="bandwidthChart" height="95"></canvas>
+      </section>
+
+      <section class="mt-4 grid gap-4 xl:grid-cols-2">
+        <div class="panel-card">
+          <h2 class="title">Crear usuario Xray (VLESS/VMess)</h2>
+          <div class="grid gap-2 md:grid-cols-2">
+            <input id="xrayName" class="input" placeholder="Nombre" />
+            <input id="xraySecret" class="input" placeholder="UUID (opcional)" />
+            <input id="xrayExpires" class="input" type="datetime-local" />
+            <button id="xrayCreateBtn" class="btn-primary">Crear Xray</button>
+            <button id="xrayDemoBtn" class="btn-secondary md:col-span-2">Generar Demo 48h</button>
+          </div>
+        </div>
+
+        <div class="panel-card">
+          <h2 class="title">Crear usuario SSH/Dropbear</h2>
+          <div class="grid gap-2 md:grid-cols-2">
+            <input id="sshUser" class="input" placeholder="Username" />
+            <input id="sshPass" class="input" placeholder="Password" />
+            <input id="sshExpires" class="input" type="datetime-local" />
+            <input id="sshMaxSessions" class="input" type="number" min="1" value="2" placeholder="Max sesiones" />
+            <button id="sshCreateBtn" class="btn-primary">Crear SSH</button>
+            <button id="sshDemoBtn" class="btn-secondary md:col-span-2">Generar Demo SSH 48h</button>
+          </div>
+        </div>
+      </section>
+
+      <section class="mt-4 grid gap-4 xl:grid-cols-2">
+        <div class="panel-card">
+          <h2 class="title">Usuarios Xray</h2>
+          <table class="table"><thead><tr><th>ID</th><th>Nombre</th><th>Expira</th><th>Estado</th></tr></thead><tbody id="xrayTable"></tbody></table>
+        </div>
+        <div class="panel-card">
+          <h2 class="title">Usuarios SSH/Dropbear</h2>
+          <table class="table"><thead><tr><th>ID</th><th>User</th><th>Expira</th><th>Estado</th><th>Accion</th></tr></thead><tbody id="sshTable"></tbody></table>
+        </div>
+      </section>
+
+      <section class="mt-4 grid gap-4 xl:grid-cols-2">
+        <div class="panel-card">
+          <h2 class="title">Copy & Send (WhatsApp)</h2>
+          <textarea id="copyBlock" class="input min-h-44" readonly></textarea>
+          <button id="copyBtn" class="btn-primary mt-2">Copiar texto</button>
+          <div class="mt-3 grid gap-2 md:grid-cols-2">
+            <input id="vlessLink" class="input" readonly placeholder="Link VLESS+REALITY" />
+            <input id="trojanLink" class="input" readonly placeholder="Link Trojan" />
+            <input id="ssLink" class="input md:col-span-2" readonly placeholder="Link Shadowsocks 2022" />
+            <input id="subLink" class="input md:col-span-2" readonly placeholder="Link de suscripcion" />
+          </div>
+          <img id="qrImage" class="mt-3 hidden rounded-xl border border-slate-700 p-2" alt="QR" />
+        </div>
+
+        <div class="panel-card" id="adminActions">
+          <h2 class="title">Acciones de sistema (admin)</h2>
+          <div class="grid gap-2 md:grid-cols-2">
+            <button id="bbrBtn" class="btn-secondary">Activar TCP BBR</button>
+            <button id="cleanBtn" class="btn-secondary">Limpiar RAM y logs</button>
+            <button id="memBoostBtn" class="btn-secondary">Auto Zram/Swap</button>
+            <button id="badvpnBtn" class="btn-secondary">Instalar BadVPN:7300</button>
+            <button id="wstBtn" class="btn-secondary">Instalar WS tunnel</button>
+            <button id="dropbearBtn" class="btn-secondary">Instalar/activar Dropbear</button>
+            <button id="stunnelBtn" class="btn-secondary">Instalar/activar Stunnel</button>
+            <button id="backupBtn" class="btn-secondary">Respaldo SQLite</button>
+            <button id="expireBtn" class="btn-secondary md:col-span-2">Desactivar expirados ahora</button>
+          </div>
+        </div>
+      </section>
+
+      <section class="mt-4 panel-card">
+        <div class="mb-2 flex items-center justify-between">
+          <h2 class="title">Informacion del sistema</h2>
+          <button id="sysInfoBtn" class="btn-secondary">Actualizar</button>
+        </div>
+        <pre id="sysInfoText" class="input min-h-28 whitespace-pre-wrap">Sin datos</pre>
+      </section>
+
+      <section class="mt-4 panel-card" id="adminAccountBlock">
+        <h2 class="title">Gestion de cuentas panel (admin)</h2>
+        <div class="grid gap-2 md:grid-cols-5">
+          <input id="newAccUser" class="input" placeholder="Usuario" />
+          <input id="newAccPass" class="input" placeholder="Password" />
+          <select id="newAccRole" class="input">
+            <option value="reseller">reseller</option>
+            <option value="user">user</option>
+          </select>
+          <input id="newAccCredits" class="input" type="number" placeholder="Creditos" value="0" />
+          <button id="newAccBtn" class="btn-primary">Crear cuenta</button>
+        </div>
+      </section>
+    </main>
+    <script src="/static/app.js"></script>
+  </body>
+  </html>
