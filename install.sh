@@ -2,8 +2,12 @@
 set -euo pipefail
 
 APP_ROOT="/etc/mi-panel"
+SOURCE_DIR="/opt/mi-panel-source"
 SERVICE_PANEL="/etc/systemd/system/mi-panel.service"
 SERVICE_WS="/etc/systemd/system/mi-panel-ws.service"
+SERVICE_AUTOUPDATE="/etc/systemd/system/mi-panel-autoupdate.service"
+TIMER_AUTOUPDATE="/etc/systemd/system/mi-panel-autoupdate.timer"
+AUTOUPDATE_SCRIPT="/usr/local/bin/mi-panel-autoupdate.sh"
 
 if [[ "${EUID}" -ne 0 ]]; then
   echo "[ERROR] Ejecuta como root: sudo bash install.sh"
@@ -21,6 +25,10 @@ read -rp "Puerto del panel (ej 2053/8443): " PANEL_PORT
 read -rp "Usuario admin inicial: " ADMIN_USER
 read -rsp "Password admin inicial: " ADMIN_PASS
 echo
+read -rp "URL del repositorio para autoupdates [https://github.com/underkraker/panellacasita.git]: " REPO_URL
+REPO_URL="${REPO_URL:-https://github.com/underkraker/panellacasita.git}"
+read -rp "Rama para autoupdates [main]: " REPO_BRANCH
+REPO_BRANCH="${REPO_BRANCH:-main}"
 
 if [[ -z "${DOMAIN}" || -z "${PANEL_PORT}" || -z "${ADMIN_USER}" || -z "${ADMIN_PASS}" ]]; then
   echo "[ERROR] Todos los campos salvo token son obligatorios"
@@ -42,8 +50,17 @@ if ! command -v xray >/dev/null 2>&1; then
   curl -fsSL https://github.com/XTLS/Xray-install/raw/main/install-release.sh | bash
 fi
 
+if [[ -d "${SOURCE_DIR}/.git" ]]; then
+  git -C "${SOURCE_DIR}" remote set-url origin "${REPO_URL}"
+  git -C "${SOURCE_DIR}" fetch origin "${REPO_BRANCH}"
+  git -C "${SOURCE_DIR}" reset --hard "origin/${REPO_BRANCH}"
+else
+  rm -rf "${SOURCE_DIR}"
+  git clone --branch "${REPO_BRANCH}" "${REPO_URL}" "${SOURCE_DIR}"
+fi
+
 mkdir -p "${APP_ROOT}"
-rsync -a --delete --exclude ".git" --exclude "__pycache__" ./ "${APP_ROOT}/"
+rsync -a --delete --exclude ".git" --exclude "__pycache__" --exclude ".env" --exclude "data/" "${SOURCE_DIR}/" "${APP_ROOT}/"
 
 python3.12 -m venv "${APP_ROOT}/.venv"
 "${APP_ROOT}/.venv/bin/pip" install --upgrade pip
@@ -111,6 +128,65 @@ Restart=always
 
 [Install]
 WantedBy=multi-user.target
+EOF
+
+cat >"${AUTOUPDATE_SCRIPT}" <<EOF
+#!/usr/bin/env bash
+set -euo pipefail
+
+SOURCE_DIR="${SOURCE_DIR}"
+APP_ROOT="${APP_ROOT}"
+REPO_BRANCH="${REPO_BRANCH}"
+REQ_HASH_FILE="/var/lib/mi-panel/requirements.sha256"
+
+mkdir -p /var/lib/mi-panel
+git -C "${SOURCE_DIR}" fetch origin "${REPO_BRANCH}"
+LOCAL_COMMIT="\$(git -C "${SOURCE_DIR}" rev-parse HEAD)"
+REMOTE_COMMIT="\$(git -C "${SOURCE_DIR}" rev-parse origin/${REPO_BRANCH})"
+
+if [[ "\${LOCAL_COMMIT}" == "\${REMOTE_COMMIT}" ]]; then
+  exit 0
+fi
+
+git -C "${SOURCE_DIR}" reset --hard "origin/${REPO_BRANCH}"
+rsync -a --delete --exclude ".git" --exclude "__pycache__" --exclude ".env" --exclude "data/" "${SOURCE_DIR}/" "${APP_ROOT}/"
+
+NEW_REQ_HASH="\$(sha256sum "${APP_ROOT}/requirements.txt" | awk '{print \$1}')"
+OLD_REQ_HASH=""
+if [[ -f "\${REQ_HASH_FILE}" ]]; then
+  OLD_REQ_HASH="\$(cat "\${REQ_HASH_FILE}")"
+fi
+if [[ "\${NEW_REQ_HASH}" != "\${OLD_REQ_HASH}" ]]; then
+  "${APP_ROOT}/.venv/bin/pip" install -r "${APP_ROOT}/requirements.txt"
+  printf '%s' "\${NEW_REQ_HASH}" > "\${REQ_HASH_FILE}"
+fi
+
+systemctl restart mi-panel
+systemctl restart mi-panel-ws
+EOF
+chmod +x "${AUTOUPDATE_SCRIPT}"
+
+cat >"${SERVICE_AUTOUPDATE}" <<'EOF'
+[Unit]
+Description=Mi Panel Auto Update Worker
+After=network.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/mi-panel-autoupdate.sh
+EOF
+
+cat >"${TIMER_AUTOUPDATE}" <<'EOF'
+[Unit]
+Description=Run Mi Panel autoupdates every 3 minutes
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=3min
+Persistent=true
+
+[Install]
+WantedBy=timers.target
 EOF
 
 if [[ -n "${DUCKDNS_TOKEN}" && "${DOMAIN}" == *.duckdns.org ]]; then
@@ -183,6 +259,7 @@ ufw --force enable
 systemctl daemon-reload
 systemctl enable --now mi-panel
 systemctl enable --now mi-panel-ws
+systemctl enable --now mi-panel-autoupdate.timer
 systemctl enable --now xray
 systemctl restart nginx
 
@@ -197,4 +274,5 @@ echo "Estado servicios:"
 echo "- Xray: $(systemctl is-active xray || true)"
 echo "- SSH: $(systemctl is-active ssh || true)"
 echo "- Websocket: $(systemctl is-active mi-panel-ws || true)"
+echo "- AutoUpdate: $(systemctl is-active mi-panel-autoupdate.timer || true)"
 echo "=============================================="
