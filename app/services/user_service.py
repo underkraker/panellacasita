@@ -1,4 +1,5 @@
 import random
+import re
 import string
 import uuid
 from datetime import datetime, timedelta, timezone
@@ -9,6 +10,10 @@ from app.services.export_service import build_bundle
 from app.services.subscription_service import build_for_user
 from app.services import xray_service
 from app.services.db_service import get_conn, row_to_dict
+
+
+_VALID_NAME = re.compile(r"^[a-zA-Z0-9._-]{3,40}$")
+_VALID_PROTOCOLS = {"vless-reality", "trojan", "shadowsocks-2022"}
 
 
 def _now_utc() -> datetime:
@@ -107,6 +112,8 @@ def create_user(
     clean_name = (name or "").strip()
     if not clean_name:
         raise ValueError("Nombre requerido")
+    if not _VALID_NAME.fullmatch(clean_name):
+        raise ValueError("Nombre invalido (3-40, letras/numeros/._-)")
 
     expires = _parse_iso(expires_at)
     now = _now_utc()
@@ -114,6 +121,11 @@ def create_user(
         raise ValueError("expires_at debe ser una fecha futura")
 
     final_secret = (secret or str(uuid.uuid4())).strip()
+    if not final_secret or len(final_secret) > 128 or any(ch in final_secret for ch in ("\n", "\r", " ")):
+        raise ValueError("Secret invalido")
+    clean_protocol = (protocol or "vless-reality").strip().lower()
+    if clean_protocol not in _VALID_PROTOCOLS:
+        raise ValueError("Protocolo no soportado")
     created_at = _to_iso(now)
     expires_iso = _to_iso(expires)
 
@@ -127,7 +139,7 @@ def create_user(
                 INSERT INTO users (name, secret, created_at, expires_at, status, owner_account_id, source, protocol)
                 VALUES (?, ?, ?, ?, 'active', ?, 'xray', ?)
                 """,
-                (clean_name, final_secret, created_at, expires_iso, actor["id"] if actor else None, protocol),
+                (clean_name, final_secret, created_at, expires_iso, actor["id"] if actor else None, clean_protocol),
             )
             user_id = cursor.lastrowid
             row = conn.execute("SELECT * FROM users WHERE id = ?", (user_id,)).fetchone()
@@ -162,11 +174,17 @@ def update_user(user_id: int, name=None, secret=None, expires_at=None, status=No
 
         new_name = current["name"]
         if isinstance(name, str) and name.strip():
-            new_name = name.strip()
+            candidate = name.strip()
+            if not _VALID_NAME.fullmatch(candidate):
+                raise ValueError("Nombre invalido (3-40, letras/numeros/._-)")
+            new_name = candidate
 
         new_secret = current["secret"]
         if isinstance(secret, str) and secret.strip():
-            new_secret = secret.strip()
+            candidate_secret = secret.strip()
+            if len(candidate_secret) > 128 or any(ch in candidate_secret for ch in ("\n", "\r", " ")):
+                raise ValueError("Secret invalido")
+            new_secret = candidate_secret
 
         new_expires = current["expires_at"]
         if isinstance(expires_at, str) and expires_at.strip():

@@ -1,5 +1,6 @@
 from datetime import datetime, timedelta, timezone
 from hashlib import pbkdf2_hmac
+import re
 from secrets import token_hex
 
 from app.config import settings
@@ -7,6 +8,7 @@ from app.services.db_service import get_conn, row_to_dict
 
 
 ROLE_WEIGHT = {"user": 1, "reseller": 2, "admin": 3}
+_VALID_ACCOUNT = re.compile(r"^[a-zA-Z0-9._-]{3,32}$")
 
 
 def _now() -> datetime:
@@ -44,6 +46,11 @@ def create_account(actor: dict, username: str, password: str, role: str, credits
         raise ValueError("Solo admin puede crear cuentas")
     if role not in ("reseller", "user"):
         raise ValueError("Rol invalido")
+    clean_username = (username or "").strip()
+    if not _VALID_ACCOUNT.fullmatch(clean_username):
+        raise ValueError("Usuario invalido (3-32, letras/numeros/._-)")
+    if len(password or "") < 8:
+        raise ValueError("Password minimo 8 caracteres")
 
     salt = token_hex(16)
     hashed = _hash_password(password, salt)
@@ -54,7 +61,7 @@ def create_account(actor: dict, username: str, password: str, role: str, credits
             INSERT INTO panel_accounts (username, password_hash, salt, role, credits, owner_id, is_active, created_at, must_change_password)
             VALUES (?, ?, ?, ?, ?, ?, 1, ?, 1)
             """,
-            (username, hashed, salt, role, credits, actor["id"], now),
+            (clean_username, hashed, salt, role, int(credits), actor["id"], now),
         )
         row = conn.execute("SELECT * FROM panel_accounts WHERE id = ?", (cursor.lastrowid,)).fetchone()
 
@@ -64,6 +71,9 @@ def create_account(actor: dict, username: str, password: str, role: str, credits
 
 
 def login(username: str, password: str) -> dict:
+    clean_username = (username or "").strip()
+    if not _VALID_ACCOUNT.fullmatch(clean_username):
+        raise ValueError("Credenciales invalidas")
     with get_conn() as conn:
         row = conn.execute(
             """
@@ -71,7 +81,7 @@ def login(username: str, password: str) -> dict:
             FROM panel_accounts
             WHERE username = ?
             """,
-            (username,),
+            (clean_username,),
         ).fetchone()
 
         if row is None:
@@ -213,8 +223,8 @@ def update_profile(
         final_username = account["username"]
         if isinstance(new_username, str) and new_username.strip():
             candidate = new_username.strip()
-            if len(candidate) < 3:
-                raise ValueError("Usuario minimo 3 caracteres")
+            if not _VALID_ACCOUNT.fullmatch(candidate):
+                raise ValueError("Usuario invalido (3-32, letras/numeros/._-)")
             exists = conn.execute(
                 "SELECT id FROM panel_accounts WHERE username = ? AND id != ?",
                 (candidate, account["id"]),

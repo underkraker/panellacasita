@@ -102,6 +102,7 @@ const initBandwidthChart = () => {
 };
 
 const refreshBandwidth = async () => {
+  if (document.hidden) return;
   try {
     const hours = Number(el("bandwidthRange").value || 24);
     if (state.account?.role === "admin") {
@@ -191,6 +192,7 @@ const refreshTables = async () => {
 };
 
 const refreshMetrics = async () => {
+  if (document.hidden) return;
   try {
     const data = await api("/api/system/metrics");
     el("cpuValue").textContent = `${data.cpu_pct}%`;

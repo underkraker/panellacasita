@@ -1,7 +1,7 @@
 import subprocess
 
 
-def run_command(cmd: list[str], timeout: int = 30) -> dict:
+def run_command(cmd: list[str], timeout: int = 30, input_data: str | None = None) -> dict:
     try:
         result = subprocess.run(
             cmd,
@@ -9,6 +9,7 @@ def run_command(cmd: list[str], timeout: int = 30) -> dict:
             capture_output=True,
             text=True,
             timeout=timeout,
+            input=input_data,
         )
         return {
             "ok": True,
@@ -24,6 +25,14 @@ def run_command(cmd: list[str], timeout: int = 30) -> dict:
             "stdout": (exc.stdout or "").strip(),
             "stderr": (exc.stderr or "").strip(),
             "returncode": exc.returncode,
+        }
+    except subprocess.TimeoutExpired as exc:
+        return {
+            "ok": False,
+            "command": cmd,
+            "stdout": (exc.stdout or "").strip() if isinstance(exc.stdout, str) else "",
+            "stderr": (exc.stderr or "").strip() if isinstance(exc.stderr, str) else "Command timeout",
+            "returncode": 124,
         }
     except Exception as exc:
         return {

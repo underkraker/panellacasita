@@ -1,6 +1,6 @@
 from datetime import datetime, timedelta, timezone
 import random
-import shlex
+import re
 import string
 
 from app.config import settings
@@ -55,8 +55,10 @@ def create_ssh_user(
     max_sessions: int | None = None,
 ) -> dict:
     clean_username = username.strip().lower()
-    if not clean_username.isalnum():
-        raise ValueError("username solo permite letras y numeros")
+    if not re.fullmatch(r"[a-z0-9]{3,32}", clean_username):
+        raise ValueError("username invalido (3-32, solo letras y numeros)")
+    if any(ch in password for ch in ("\n", "\r", ":")):
+        raise ValueError("password contiene caracteres no permitidos")
     if len(clean_username) < 3:
         raise ValueError("username minimo 3 caracteres")
 
@@ -67,8 +69,7 @@ def create_ssh_user(
         if not run["ok"] and "already exists" not in run["stderr"]:
             raise ValueError(run["stderr"] or "No se pudo crear usuario del sistema")
 
-        safe_pair = shlex.quote(f"{clean_username}:{password}")
-        pass_result = run_command(["/usr/bin/env", "bash", "-lc", f"echo {safe_pair} | /usr/sbin/chpasswd"])
+        pass_result = run_command(["/usr/sbin/chpasswd"], input_data=f"{clean_username}:{password}\n")
         if not pass_result["ok"]:
             raise ValueError(pass_result["stderr"] or "No se pudo configurar password")
 

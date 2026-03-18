@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
+trap 'echo "[ERROR] Fallo en linea ${LINENO}: ${BASH_COMMAND}" >&2' ERR
 
 APP_ROOT="/etc/mi-panel"
 SOURCE_DIR="/opt/mi-panel-source"
@@ -180,6 +181,7 @@ XRAY_TROJAN_PATH=/tr
 XRAY_SHADOWSOCKS_PATH=/ss
 XRAY_SHADOWSOCKS_METHOD=2022-blake3-aes-128-gcm
 EOF
+chmod 600 "${APP_ROOT}/.env"
 
 cat >"${SERVICE_PANEL}" <<'EOF'
 [Unit]
@@ -293,7 +295,31 @@ rm -f /etc/nginx/sites-enabled/default
 nginx -t
 systemctl restart nginx
 
-certbot --nginx -d "${DOMAIN}" --non-interactive --agree-tos -m "admin@${DOMAIN#*.}" --redirect
+if ! certbot --nginx -d "${DOMAIN}" --non-interactive --agree-tos -m "admin@${DOMAIN#*.}" --redirect; then
+  echo "[WARN] Certbot fallo en instalacion inicial; continuando con configuracion sin SSL dedicado temporalmente."
+fi
+
+CERT_DIR="/etc/letsencrypt/live/${DOMAIN}"
+if [[ ! -f "${CERT_DIR}/fullchain.pem" || ! -f "${CERT_DIR}/privkey.pem" ]]; then
+  echo "[WARN] Certbot no genero certificado. Se mantiene Nginx sin bloque SSL dedicado al panel."
+  cat >"/etc/nginx/sites-available/mi-panel.conf" <<EOF
+server {
+    listen 80;
+    listen [::]:80;
+    server_name ${DOMAIN};
+    location / { proxy_pass http://127.0.0.1:18080/; proxy_http_version 1.1; proxy_set_header Host \$host; }
+}
+
+server {
+    listen ${PANEL_PORT};
+    listen [::]:${PANEL_PORT};
+    server_name ${DOMAIN};
+    location / { proxy_pass http://127.0.0.1:18080/; proxy_http_version 1.1; proxy_set_header Host \$host; }
+}
+EOF
+  nginx -t
+  systemctl restart nginx
+else
 
 cat >/etc/cron.d/mi-panel-cert-renew <<'EOF'
 17 3 * * * root /usr/bin/env bash -lc 'ufw allow 80/tcp >/dev/null 2>&1; certbot renew --quiet --deploy-hook "systemctl reload nginx"; ufw --force delete allow 80/tcp >/dev/null 2>&1'
@@ -331,6 +357,7 @@ server {
 EOF
 
 nginx -t
+fi
 
 ufw --force reset
 ufw default deny incoming
