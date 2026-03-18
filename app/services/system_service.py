@@ -451,21 +451,19 @@ def apply_connection_profile(mode: str, domain: str | None = None, panel_port: i
         raise ValueError("Dominio requerido")
     final_panel_port = int(panel_port or settings.PANEL_PUBLIC_PORT)
 
-    gateway = nginx_service.configure_full_gateway(
+    gateway = nginx_service.configure_panel_only(
         domain=final_domain,
         panel_secret_port=settings.PANEL_SECRET_PORT,
         panel_public_port=final_panel_port,
-        xray_port=settings.XRAY_LISTEN_PORT,
-        ssh_ws_path=settings.SSH_WS_PATH,
-        ssh_ws_port=settings.WS_TUNNEL_PORT,
     )
     if not gateway.get("ok"):
         return {"ok": False, "error": "Fallo configuracion Nginx", "gateway": gateway}
 
-    firewall_service.open_port(443, "tcp")
     firewall_service.open_port(final_panel_port, "tcp")
 
     if selected == "ssl":
+        run_command([settings.SYSTEMCTL_BIN, "stop", settings.XRAY_SERVICE_NAME])
+        run_command([settings.SYSTEMCTL_BIN, "stop", "mi-panel-ws"])
         stunnel = install_stunnel_service()
         return {
             "ok": stunnel.get("ok", False),
@@ -476,7 +474,9 @@ def apply_connection_profile(mode: str, domain: str | None = None, panel_port: i
         }
 
     if selected == "ssl-payload":
-        ws = install_ws_tunnel_service(target_port=22)
+        run_command([settings.SYSTEMCTL_BIN, "stop", settings.XRAY_SERVICE_NAME])
+        run_command([settings.SYSTEMCTL_BIN, "stop", "stunnel4"])
+        ws = install_ws_tunnel_service(target_port=22, ports_value="443,8080,8880")
         return {
             "ok": ws.get("ok", False),
             "mode": selected,
@@ -485,6 +485,8 @@ def apply_connection_profile(mode: str, domain: str | None = None, panel_port: i
             "status": action_status(),
         }
 
+    run_command([settings.SYSTEMCTL_BIN, "stop", "stunnel4"])
+    run_command([settings.SYSTEMCTL_BIN, "stop", "mi-panel-ws"])
     xray = run_command([settings.SYSTEMCTL_BIN, "restart", settings.XRAY_SERVICE_NAME])
     ufw = firewall_service.open_port(443, "tcp")
     return {

@@ -318,3 +318,62 @@ server {{
     if not test["ok"]:
         return test
     return reload_nginx()
+
+
+def configure_panel_only(domain: str, panel_secret_port: int, panel_public_port: int) -> dict:
+    d = _validate_domain(domain)
+    if panel_secret_port < 1 or panel_secret_port > 65535:
+        raise ValueError("panel_secret_port invalido")
+    if panel_public_port < 1 or panel_public_port > 65535:
+        raise ValueError("panel_public_port invalido")
+
+    cert = f"/etc/letsencrypt/live/{d}/fullchain.pem"
+    key = f"/etc/letsencrypt/live/{d}/privkey.pem"
+    has_cert = os.path.exists(cert) and os.path.exists(key)
+
+    os.makedirs(settings.NGINX_SITES_AVAILABLE, exist_ok=True)
+    os.makedirs(settings.NGINX_SITES_ENABLED, exist_ok=True)
+
+    if has_cert:
+        content = f"""server {{
+    listen {panel_public_port} ssl;
+    listen [::]:{panel_public_port} ssl;
+    server_name {d};
+    ssl_certificate {cert};
+    ssl_certificate_key {key};
+    location / {{
+        proxy_pass http://127.0.0.1:{panel_secret_port}/;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    }}
+}}
+"""
+    else:
+        content = f"""server {{
+    listen {panel_public_port};
+    listen [::]:{panel_public_port};
+    server_name {d};
+    location / {{
+        proxy_pass http://127.0.0.1:{panel_secret_port}/;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    }}
+}}
+"""
+
+    target = _site_path(d)
+    enabled = _enabled_path(d)
+    with open(target, "w", encoding="utf-8") as file:
+        file.write(content)
+    if os.path.islink(enabled) or os.path.exists(enabled):
+        os.remove(enabled)
+    os.symlink(target, enabled)
+
+    test = test_nginx()
+    if not test["ok"]:
+        return test
+    return reload_nginx()

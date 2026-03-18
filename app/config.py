@@ -53,7 +53,7 @@ class Settings:
     WS_TUNNEL_TARGET_HOST = os.getenv("WS_TUNNEL_TARGET_HOST", "127.0.0.1")
     WS_TUNNEL_TARGET_PORT = int(os.getenv("WS_TUNNEL_TARGET_PORT", "22"))
     SSH_WS_PATH = os.getenv("SSH_WS_PATH", "/ws-ssh")
-    STUNNEL_PORT = int(os.getenv("STUNNEL_PORT", "4433"))
+    STUNNEL_PORT = int(os.getenv("STUNNEL_PORT", "443"))
 
     SSH_DEFAULT_MAX_SESSIONS = int(os.getenv("SSH_DEFAULT_MAX_SESSIONS", "2"))
     AUTO_MIN_RAM_MB = int(os.getenv("AUTO_MIN_RAM_MB", "2048"))
