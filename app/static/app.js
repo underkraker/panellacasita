@@ -80,6 +80,9 @@ const runTaskAction = async (title, fn) => {
       `Duracion: ${duration}s`,
       body || "Sin salida adicional",
     ].join("\n\n");
+    setTimeout(() => {
+      refreshActionStatus().catch(() => {});
+    }, 200);
     setTimeout(closeTaskModal, 1800);
     return result;
   } catch (error) {
@@ -269,6 +272,32 @@ const refreshMetrics = async () => {
   }
 };
 
+const refreshActionStatus = async () => {
+  try {
+    const data = await api("/api/system/actions/status");
+    const services = data.services || {};
+    const ports = data.ports || {};
+    const wsPorts = (ports.ws || [])
+      .map((item) => `${item.port}:${item.open ? "abierto" : "cerrado"}`)
+      .join(", ");
+    const text = [
+      "Estado de acciones:",
+      `- xray: ${services.xray ? "activo" : "inactivo"}`,
+      `- dropbear: ${services.dropbear ? "activo" : "inactivo"}`,
+      `- stunnel4: ${services.stunnel4 ? "activo" : "inactivo"}`,
+      `- ws_tunnel: ${services.ws_tunnel ? "activo" : "inactivo"}`,
+      `- badvpn: ${services.badvpn ? "activo" : "inactivo"}`,
+      `- https 443: ${ports.https ? "abierto" : "cerrado"}`,
+      `- stunnel: ${ports.stunnel ? "abierto" : "cerrado"}`,
+      `- badvpn 7300/udp: ${ports.badvpn ? "abierto" : "cerrado"}`,
+      `- ws: ${wsPorts || "sin puertos"}`,
+    ].join("\n");
+    el("sysInfoText").textContent = text;
+  } catch {
+    // no-op
+  }
+};
+
 el("loginBtn").addEventListener("click", async () => {
   try {
     const username = el("username").value.trim();
@@ -432,7 +461,10 @@ el("fwStatusBtn").addEventListener("click", async () => {
 
 el("expireBtn").addEventListener("click", async () => {
   const result = await runTaskAction("Procesando expiraciones", () => api("/api/system/expire/run", "POST")).catch(() => null);
-  if (result) await refreshTables();
+  if (result) {
+    await refreshTables();
+    await refreshActionStatus();
+  }
 });
 
 el("newAccBtn").addEventListener("click", async () => {
@@ -482,6 +514,7 @@ el("sysInfoBtn").addEventListener("click", async () => {
   } catch (e) {
     alert(e.message);
   }
+  await refreshActionStatus();
 });
 
 initChart();
@@ -489,9 +522,10 @@ initBandwidthChart();
 updateHeader();
 setInterval(refreshMetrics, 3000);
 setInterval(refreshBandwidth, 60000);
+setInterval(refreshActionStatus, 10000);
 
 if (state.token) {
-  Promise.all([refreshTables(), refreshBandwidth()]).catch(() => {
+  Promise.all([refreshTables(), refreshBandwidth(), refreshActionStatus()]).catch(() => {
     state.token = "";
     localStorage.removeItem("panel_token");
   });

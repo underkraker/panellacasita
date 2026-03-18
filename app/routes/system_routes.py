@@ -19,6 +19,12 @@ def info():
     return jsonify(system_service.system_info()), 200
 
 
+@system_bp.get("/actions/status")
+@require_roles("user")
+def actions_status():
+    return jsonify(system_service.action_status()), 200
+
+
 @system_bp.post("/tuning/bbr")
 @require_roles("admin")
 def enable_bbr():

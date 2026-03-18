@@ -126,6 +126,11 @@ def create_user(
     clean_protocol = (protocol or "vless-reality").strip().lower()
     if clean_protocol not in _VALID_PROTOCOLS:
         raise ValueError("Protocolo no soportado")
+
+    xray_state = xray_service.xray_status()
+    if not xray_state.get("ok"):
+        raise ValueError("Xray no esta activo. Activa V2Ray/Xray en Acciones de sistema")
+
     created_at = _to_iso(now)
     expires_iso = _to_iso(expires)
 

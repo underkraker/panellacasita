@@ -2,12 +2,53 @@ from datetime import datetime, timezone
 import os
 
 from app.config import settings
-from app.services import nginx_service
+from app.services import firewall_service, nginx_service
 from app.utils.command_runner import run_command
 
 
 _PREV_TOTAL = 0
 _PREV_IDLE = 0
+
+
+def _service_active(name: str) -> bool:
+    result = run_command([settings.SYSTEMCTL_BIN, "is-active", name])
+    return result.get("ok", False) and result.get("stdout", "").strip() == "active"
+
+
+def _port_open(port: int, protocol: str) -> bool:
+    return firewall_service.is_port_open(port, protocol)
+
+
+def action_status() -> dict:
+    ws_ports = []
+    for raw in settings.WS_TUNNEL_PORTS.split(","):
+        raw = raw.strip()
+        if not raw:
+            continue
+        try:
+            ws_ports.append(int(raw))
+        except ValueError:
+            continue
+    if not ws_ports:
+        ws_ports = [settings.WS_TUNNEL_PORT]
+
+    return {
+        "ok": True,
+        "services": {
+            "xray": _service_active(settings.XRAY_SERVICE_NAME),
+            "dropbear": _service_active("dropbear"),
+            "stunnel4": _service_active("stunnel4"),
+            "ws_tunnel": _service_active("mi-panel-ws"),
+            "badvpn": _service_active("badvpn"),
+        },
+        "ports": {
+            "panel": _port_open(settings.PANEL_PUBLIC_PORT, "tcp"),
+            "https": _port_open(443, "tcp"),
+            "stunnel": _port_open(settings.STUNNEL_PORT, "tcp"),
+            "badvpn": _port_open(7300, "udp"),
+            "ws": [{"port": port, "open": _port_open(port, "tcp")} for port in ws_ports],
+        },
+    }
 
 
 def _read_cpu_usage() -> float:
@@ -159,7 +200,7 @@ def ensure_memory_boost(min_ram_mb: int | None = None) -> dict:
 
 
 def install_badvpn_service(port: int = 7300) -> dict:
-    ufw_open = run_command([settings.UFW_BIN, "allow", f"{port}/udp"])
+    ufw_open = firewall_service.open_port(port, "udp")
 
     binary_path = "/usr/bin/badvpn-udpgw"
     if not os.path.exists(binary_path):
@@ -230,9 +271,28 @@ WantedBy=multi-user.target
 
 def install_stunnel_service() -> dict:
     install = run_command(["/usr/bin/apt", "-y", "install", "stunnel4"])
-    conf = """setuid = stunnel4
+    cert_file = f"/etc/letsencrypt/live/{settings.PANEL_DOMAIN}/fullchain.pem"
+    key_file = f"/etc/letsencrypt/live/{settings.PANEL_DOMAIN}/privkey.pem"
+    pem_file = "/etc/stunnel/stunnel.pem"
+    if settings.PANEL_DOMAIN and os.path.exists(cert_file) and os.path.exists(key_file):
+        cert_block = f"cert = {cert_file}\nkey = {key_file}\n"
+    else:
+        create_self_signed = run_command(
+            [
+                "/usr/bin/env",
+                "bash",
+                "-lc",
+                "openssl req -new -x509 -days 3650 -nodes -subj '/CN=panel.local' -keyout /tmp/stunnel.key -out /tmp/stunnel.crt && cat /tmp/stunnel.crt /tmp/stunnel.key > /etc/stunnel/stunnel.pem && chmod 600 /etc/stunnel/stunnel.pem",
+            ]
+        )
+        if not create_self_signed["ok"]:
+            return create_self_signed
+        cert_block = f"cert = {pem_file}\n"
+
+    conf = f"""setuid = stunnel4
 setgid = stunnel4
 pid = /var/run/stunnel4/stunnel.pid
+{cert_block}
 
 [ssh-tls]
 accept = {settings.STUNNEL_PORT}
@@ -251,7 +311,7 @@ connect = 127.0.0.1:22
     run_command(["/usr/bin/env", "bash", "-lc", "grep -q '^ENABLED=1' /etc/default/stunnel4 || sed -i 's/^ENABLED=.*/ENABLED=1/' /etc/default/stunnel4"])
     run_command([settings.SYSTEMCTL_BIN, "enable", "stunnel4"])
     restart = run_command([settings.SYSTEMCTL_BIN, "restart", "stunnel4"])
-    ufw = run_command([settings.UFW_BIN, "allow", f"{settings.STUNNEL_PORT}/tcp"])
+    ufw = firewall_service.open_port(settings.STUNNEL_PORT, "tcp")
     return {"ok": install["ok"] and restart["ok"] and ufw["ok"], "install": install, "restart": restart, "ufw": ufw}
 
 
@@ -360,7 +420,7 @@ WantedBy=multi-user.target
     run_command([settings.SYSTEMCTL_BIN, "daemon-reload"])
     run_command([settings.SYSTEMCTL_BIN, "enable", "mi-panel-ws"])
     restart = run_command([settings.SYSTEMCTL_BIN, "restart", "mi-panel-ws"])
-    ufw_results = [run_command([settings.UFW_BIN, "allow", f"{port}/tcp"]) for port in ports]
+    ufw_results = [firewall_service.open_port(port, "tcp") for port in ports]
     return {
         "ok": restart["ok"] and all(item["ok"] for item in ufw_results),
         "restart": restart,
@@ -402,20 +462,36 @@ def apply_connection_profile(mode: str, domain: str | None = None, panel_port: i
     if not gateway.get("ok"):
         return {"ok": False, "error": "Fallo configuracion Nginx", "gateway": gateway}
 
+    firewall_service.open_port(443, "tcp")
+    firewall_service.open_port(final_panel_port, "tcp")
+
     if selected == "ssl":
         stunnel = install_stunnel_service()
-        return {"ok": stunnel.get("ok", False), "mode": selected, "stunnel": stunnel, "gateway": gateway}
+        return {
+            "ok": stunnel.get("ok", False),
+            "mode": selected,
+            "stunnel": stunnel,
+            "gateway": gateway,
+            "status": action_status(),
+        }
 
     if selected == "ssl-payload":
         ws = install_ws_tunnel_service(target_port=22)
-        return {"ok": ws.get("ok", False), "mode": selected, "ws_tunnel": ws, "gateway": gateway}
+        return {
+            "ok": ws.get("ok", False),
+            "mode": selected,
+            "ws_tunnel": ws,
+            "gateway": gateway,
+            "status": action_status(),
+        }
 
     xray = run_command([settings.SYSTEMCTL_BIN, "restart", settings.XRAY_SERVICE_NAME])
-    ufw = run_command([settings.UFW_BIN, "allow", "443/tcp"])
+    ufw = firewall_service.open_port(443, "tcp")
     return {
         "ok": xray.get("ok", False) and ufw.get("ok", False),
         "mode": selected,
         "xray": xray,
         "ufw": ufw,
         "gateway": gateway,
+        "status": action_status(),
     }

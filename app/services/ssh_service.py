@@ -32,6 +32,43 @@ def _credentials_block(user: dict) -> str:
     )
 
 
+def _service_active(name: str) -> bool:
+    result = run_command([settings.SYSTEMCTL_BIN, "is-active", name])
+    return result.get("ok", False) and result.get("stdout", "").strip() == "active"
+
+
+def _port_open(port: int, protocol: str) -> bool:
+    result = run_command([settings.UFW_BIN, "status"])
+    if not result.get("ok", False):
+        return False
+    token = f"{port}/{protocol}"
+    for line in result.get("stdout", "").splitlines():
+        if token in line and "ALLOW" in line:
+            return True
+    return False
+
+
+def _transport_ready() -> bool:
+    ssh_stack = _service_active("ssh") or _service_active("dropbear")
+    direct = ssh_stack and _port_open(22, "tcp")
+    stunnel = _service_active("stunnel4") and _port_open(settings.STUNNEL_PORT, "tcp")
+
+    ws_ports = []
+    for raw in settings.WS_TUNNEL_PORTS.split(","):
+        raw = raw.strip()
+        if not raw:
+            continue
+        try:
+            ws_ports.append(int(raw))
+        except ValueError:
+            continue
+    if not ws_ports:
+        ws_ports = [settings.WS_TUNNEL_PORT]
+    ws = _service_active("mi-panel-ws") and any(_port_open(port, "tcp") for port in ws_ports)
+
+    return direct or stunnel or ws
+
+
 def _set_max_sessions(username: str, max_sessions: int) -> dict:
     safe_limit = max(1, int(max_sessions))
     line = f"{username} hard maxlogins {safe_limit}"
@@ -54,6 +91,9 @@ def create_ssh_user(
     notes: str = "",
     max_sessions: int | None = None,
 ) -> dict:
+    if not _transport_ready():
+        raise ValueError("No hay transporte SSH activo. Activa SSL directo o SSL+Payload antes de crear usuarios")
+
     clean_username = username.strip().lower()
     if not re.fullmatch(r"[a-z0-9]{3,32}", clean_username):
         raise ValueError("username invalido (3-32, solo letras y numeros)")
@@ -207,6 +247,13 @@ def online_ssh_users() -> dict:
 
 
 def ensure_dropbear() -> dict:
-    run_command(["/usr/bin/apt", "-y", "install", "dropbear"])
+    install = run_command(["/usr/bin/apt", "-y", "install", "dropbear"])
     run_command(["/bin/systemctl", "enable", "dropbear"])
-    return run_command(["/bin/systemctl", "restart", "dropbear"])
+    restart = run_command(["/bin/systemctl", "restart", "dropbear"])
+    port_open = run_command([settings.UFW_BIN, "allow", "22/tcp"])
+    return {
+        "ok": install.get("ok", False) and restart.get("ok", False) and port_open.get("ok", False),
+        "install": install,
+        "restart": restart,
+        "ufw": port_open,
+    }
