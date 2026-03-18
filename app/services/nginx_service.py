@@ -102,10 +102,9 @@ def write_site(domain: str, ws_path: str, upstream_port: int, enable_ssl: bool):
     with open(target, "w", encoding="utf-8") as file:
         file.write(content)
 
-    if not os.path.islink(enabled):
-        if os.path.exists(enabled):
-            os.remove(enabled)
-        os.symlink(target, enabled)
+    if os.path.islink(enabled) or os.path.exists(enabled):
+        os.remove(enabled)
+    os.symlink(target, enabled)
 
     test = test_nginx()
     if not test["ok"]:
@@ -205,10 +204,116 @@ server {{
     enabled = _enabled_path(d)
     with open(target, "w", encoding="utf-8") as file:
         file.write(content)
-    if not os.path.islink(enabled):
-        if os.path.exists(enabled):
-            os.remove(enabled)
-        os.symlink(target, enabled)
+    if os.path.islink(enabled) or os.path.exists(enabled):
+        os.remove(enabled)
+    os.symlink(target, enabled)
+    test = test_nginx()
+    if not test["ok"]:
+        return test
+    return reload_nginx()
+
+
+def configure_full_gateway(
+    domain: str,
+    panel_secret_port: int,
+    panel_public_port: int,
+    xray_port: int,
+    ssh_ws_path: str,
+    ssh_ws_port: int,
+) -> dict:
+    d = _validate_domain(domain)
+    if panel_secret_port < 1 or panel_secret_port > 65535:
+        raise ValueError("panel_secret_port invalido")
+    if panel_public_port < 1 or panel_public_port > 65535:
+        raise ValueError("panel_public_port invalido")
+    ssh_path = _validate_ws_path(ssh_ws_path)
+
+    os.makedirs(settings.NGINX_SITES_AVAILABLE, exist_ok=True)
+    os.makedirs(settings.NGINX_SITES_ENABLED, exist_ok=True)
+
+    content = f"""server {{
+    listen 80;
+    listen [::]:80;
+    server_name {d};
+    return 301 https://$host$request_uri;
+}}
+
+server {{
+    listen 443 ssl http2;
+    listen [::]:443 ssl http2;
+    server_name {d};
+
+    ssl_certificate /etc/letsencrypt/live/{d}/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/{d}/privkey.pem;
+
+    location /panel/ {{
+        proxy_pass http://127.0.0.1:{panel_secret_port}/;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    }}
+
+    location {ssh_path} {{
+        proxy_pass http://127.0.0.1:{ssh_ws_port};
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host $host;
+    }}
+
+    location {settings.XRAY_WS_PATH} {{
+        proxy_pass http://127.0.0.1:{xray_port};
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host $host;
+    }}
+
+    location {settings.XRAY_TROJAN_PATH} {{
+        proxy_pass http://127.0.0.1:{xray_port + 1};
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host $host;
+    }}
+
+    location {settings.XRAY_SHADOWSOCKS_PATH} {{
+        proxy_pass http://127.0.0.1:{xray_port + 2};
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host $host;
+    }}
+
+    location / {{
+        return 200 'Lacasita Pro Max 2026';
+        add_header Content-Type text/plain;
+    }}
+}}
+
+server {{
+    listen {panel_public_port} ssl http2;
+    listen [::]:{panel_public_port} ssl http2;
+    server_name {d};
+    ssl_certificate /etc/letsencrypt/live/{d}/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/{d}/privkey.pem;
+    location / {{
+        proxy_pass http://127.0.0.1:{panel_secret_port}/;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    }}
+}}
+"""
+    target = _site_path(d)
+    enabled = _enabled_path(d)
+    with open(target, "w", encoding="utf-8") as file:
+        file.write(content)
+    if os.path.islink(enabled) or os.path.exists(enabled):
+        os.remove(enabled)
+    os.symlink(target, enabled)
     test = test_nginx()
     if not test["ok"]:
         return test

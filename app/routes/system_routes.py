@@ -112,6 +112,20 @@ def autoupdate_now():
     return jsonify(result), (200 if result.get("ok") else 500)
 
 
+@system_bp.post("/profile/apply")
+@require_roles("admin")
+def apply_profile():
+    data = request.get_json(silent=True) or {}
+    try:
+        mode = str(data.get("mode", "")).strip().lower()
+        domain = data.get("domain")
+        panel_port = int(data["panel_port"]) if data.get("panel_port") else None
+        result = system_service.apply_connection_profile(mode=mode, domain=domain, panel_port=panel_port)
+        return jsonify(result), (200 if result.get("ok") else 500)
+    except Exception as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 400
+
+
 @system_bp.post("/firewall/open")
 @require_roles("admin")
 def firewall_open_port():

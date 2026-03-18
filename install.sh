@@ -157,6 +157,8 @@ cat >"${APP_ROOT}/.env" <<EOF
 PANEL_HOST=127.0.0.1
 PANEL_PORT=18080
 PANEL_SECRET_PORT=18080
+PANEL_PUBLIC_PORT=${PANEL_PORT}
+PANEL_DOMAIN=${DOMAIN}
 PANEL_API_KEY=${API_KEY}
 PANEL_ADMIN_USER=${ADMIN_USER}
 PANEL_ADMIN_PASS=${ADMIN_PASS}
@@ -166,7 +168,9 @@ ACCESS_PORTS=22,80,443,${PANEL_PORT},7300
 DB_PATH=/etc/mi-panel/data/panel.db
 WS_TUNNEL_PORTS=8080,8880
 WS_TUNNEL_TARGET_HOST=127.0.0.1
-WS_TUNNEL_TARGET_PORT=80
+WS_TUNNEL_TARGET_PORT=22
+SSH_WS_PATH=/ws-ssh
+STUNNEL_PORT=4433
 XRAY_CONFIG_PATH=/usr/local/etc/xray/config.json
 XRAY_SERVICE_NAME=xray
 XRAY_BIN=/usr/local/bin/xray
@@ -341,6 +345,7 @@ server {
     ssl_certificate_key /etc/letsencrypt/live/${DOMAIN}/privkey.pem;
 
     location /ws { proxy_pass http://127.0.0.1:10000; proxy_http_version 1.1; proxy_set_header Upgrade \$http_upgrade; proxy_set_header Connection "upgrade"; }
+    location /ws-ssh { proxy_pass http://127.0.0.1:8080; proxy_http_version 1.1; proxy_set_header Upgrade \$http_upgrade; proxy_set_header Connection "upgrade"; }
     location /tr { proxy_pass http://127.0.0.1:10001; proxy_http_version 1.1; proxy_set_header Upgrade \$http_upgrade; proxy_set_header Connection "upgrade"; }
     location /ss { proxy_pass http://127.0.0.1:10002; proxy_http_version 1.1; proxy_set_header Upgrade \$http_upgrade; proxy_set_header Connection "upgrade"; }
     location / { return 200 'Panel VPS 2026'; add_header Content-Type text/plain; }

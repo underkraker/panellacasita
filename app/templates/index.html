@@ -144,6 +144,16 @@
             <button id="expireBtn" class="btn-secondary md:col-span-2">Desactivar expirados ahora</button>
           </div>
           <div class="mt-4 grid gap-2 md:grid-cols-4">
+            <select id="profileMode" class="input">
+              <option value="ssl">SSL directo</option>
+              <option value="ssl-payload">SSL + Payload</option>
+              <option value="v2ray">V2Ray/Xray</option>
+            </select>
+            <input id="profileDomain" class="input" placeholder="Dominio" />
+            <input id="profilePanelPort" class="input" type="number" min="1" max="65535" placeholder="Puerto panel" />
+            <button id="applyProfileBtn" class="btn-primary">Aplicar perfil</button>
+          </div>
+          <div class="mt-4 grid gap-2 md:grid-cols-4">
             <input id="fwPort" class="input" type="number" min="1" max="65535" placeholder="Puerto" />
             <select id="fwProtocol" class="input">
               <option value="tcp">tcp</option>

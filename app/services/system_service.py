@@ -2,6 +2,7 @@ from datetime import datetime, timezone
 import os
 
 from app.config import settings
+from app.services import nginx_service
 from app.utils.command_runner import run_command
 
 
@@ -234,7 +235,7 @@ setgid = stunnel4
 pid = /var/run/stunnel4/stunnel.pid
 
 [ssh-tls]
-accept = 4433
+accept = {settings.STUNNEL_PORT}
 connect = 127.0.0.1:22
 """
     write = run_command(
@@ -250,11 +251,12 @@ connect = 127.0.0.1:22
     run_command(["/usr/bin/env", "bash", "-lc", "grep -q '^ENABLED=1' /etc/default/stunnel4 || sed -i 's/^ENABLED=.*/ENABLED=1/' /etc/default/stunnel4"])
     run_command([settings.SYSTEMCTL_BIN, "enable", "stunnel4"])
     restart = run_command([settings.SYSTEMCTL_BIN, "restart", "stunnel4"])
-    return {"ok": install["ok"] and restart["ok"], "install": install, "restart": restart}
+    ufw = run_command([settings.UFW_BIN, "allow", f"{settings.STUNNEL_PORT}/tcp"])
+    return {"ok": install["ok"] and restart["ok"] and ufw["ok"], "install": install, "restart": restart, "ufw": ufw}
 
 
-def install_ws_tunnel_service() -> dict:
-    ports_raw = [p.strip() for p in settings.WS_TUNNEL_PORTS.split(",") if p.strip()]
+def install_ws_tunnel_service(target_port: int | None = None, ports_value: str | None = None) -> dict:
+    ports_raw = [p.strip() for p in (ports_value or settings.WS_TUNNEL_PORTS).split(",") if p.strip()]
     ports = []
     for item in ports_raw:
         try:
@@ -263,12 +265,13 @@ def install_ws_tunnel_service() -> dict:
             continue
     if not ports:
         ports = [settings.WS_TUNNEL_PORT]
+    final_target_port = int(target_port or settings.WS_TUNNEL_TARGET_PORT)
 
     script = f"""import asyncio
 import websockets
 
 TARGET_HOST = '{settings.WS_TUNNEL_TARGET_HOST}'
-TARGET_PORT = {settings.WS_TUNNEL_TARGET_PORT}
+TARGET_PORT = {final_target_port}
 
 
 async def handle_client(websocket):
@@ -328,7 +331,7 @@ if __name__ == '__main__':
         "/usr/bin/env",
         "bash",
         "-lc",
-        "cat > /opt/panel-admin/ws_tunnel.py << 'EOF'\n" + script + "EOF",
+        "cat > /etc/mi-panel/ws_tunnel.py << 'EOF'\n" + script + "EOF",
     ])
     if not write_script["ok"]:
         return write_script
@@ -339,7 +342,7 @@ After=network.target
 
 [Service]
 Type=simple
-ExecStart=/opt/panel-admin/.venv/bin/python /opt/panel-admin/ws_tunnel.py
+ExecStart=/etc/mi-panel/.venv/bin/python /etc/mi-panel/ws_tunnel.py
 Restart=always
 
 [Install]
@@ -349,14 +352,22 @@ WantedBy=multi-user.target
         "/usr/bin/env",
         "bash",
         "-lc",
-        "cat > /etc/systemd/system/panel-wstunnel.service << 'EOF'\n" + unit + "EOF",
+        "cat > /etc/systemd/system/mi-panel-ws.service << 'EOF'\n" + unit + "EOF",
     ])
     if not write_unit["ok"]:
         return write_unit
 
     run_command([settings.SYSTEMCTL_BIN, "daemon-reload"])
-    run_command([settings.SYSTEMCTL_BIN, "enable", "panel-wstunnel"])
-    return run_command([settings.SYSTEMCTL_BIN, "restart", "panel-wstunnel"])
+    run_command([settings.SYSTEMCTL_BIN, "enable", "mi-panel-ws"])
+    restart = run_command([settings.SYSTEMCTL_BIN, "restart", "mi-panel-ws"])
+    ufw_results = [run_command([settings.UFW_BIN, "allow", f"{port}/tcp"]) for port in ports]
+    return {
+        "ok": restart["ok"] and all(item["ok"] for item in ufw_results),
+        "restart": restart,
+        "ufw": ufw_results,
+        "target_port": final_target_port,
+        "ports": ports,
+    }
 
 
 def run_autoupdate_now() -> dict:
@@ -367,4 +378,44 @@ def run_autoupdate_now() -> dict:
         "ok": start.get("ok", False),
         "start": start,
         "status": status,
+    }
+
+
+def apply_connection_profile(mode: str, domain: str | None = None, panel_port: int | None = None) -> dict:
+    selected = (mode or "").strip().lower()
+    if selected not in ("ssl", "ssl-payload", "v2ray"):
+        raise ValueError("Modo invalido. Use ssl, ssl-payload o v2ray")
+
+    final_domain = (domain or settings.PANEL_DOMAIN or settings.XRAY_REALITY_SERVER_NAME).strip()
+    if not final_domain:
+        raise ValueError("Dominio requerido")
+    final_panel_port = int(panel_port or settings.PANEL_PUBLIC_PORT)
+
+    gateway = nginx_service.configure_full_gateway(
+        domain=final_domain,
+        panel_secret_port=settings.PANEL_SECRET_PORT,
+        panel_public_port=final_panel_port,
+        xray_port=settings.XRAY_LISTEN_PORT,
+        ssh_ws_path=settings.SSH_WS_PATH,
+        ssh_ws_port=settings.WS_TUNNEL_PORT,
+    )
+    if not gateway.get("ok"):
+        return {"ok": False, "error": "Fallo configuracion Nginx", "gateway": gateway}
+
+    if selected == "ssl":
+        stunnel = install_stunnel_service()
+        return {"ok": stunnel.get("ok", False), "mode": selected, "stunnel": stunnel, "gateway": gateway}
+
+    if selected == "ssl-payload":
+        ws = install_ws_tunnel_service(target_port=22)
+        return {"ok": ws.get("ok", False), "mode": selected, "ws_tunnel": ws, "gateway": gateway}
+
+    xray = run_command([settings.SYSTEMCTL_BIN, "restart", settings.XRAY_SERVICE_NAME])
+    ufw = run_command([settings.UFW_BIN, "allow", "443/tcp"])
+    return {
+        "ok": xray.get("ok", False) and ufw.get("ok", False),
+        "mode": selected,
+        "xray": xray,
+        "ufw": ufw,
+        "gateway": gateway,
     }

@@ -369,6 +369,18 @@ el("autoupdateBtn").addEventListener("click", async () => {
   }
 });
 
+el("applyProfileBtn").addEventListener("click", async () => {
+  try {
+    const mode = el("profileMode").value;
+    const domain = el("profileDomain").value.trim() || undefined;
+    const panel_port = Number(el("profilePanelPort").value || 0) || undefined;
+    await api("/api/system/profile/apply", "POST", { mode, domain, panel_port });
+    alert(`Perfil aplicado: ${mode}`);
+  } catch (e) {
+    alert(e.message);
+  }
+});
+
 el("fwOpenBtn").addEventListener("click", async () => {
   try {
     const port = Number(el("fwPort").value);
