@@ -188,6 +188,17 @@
         </div>
       </section>
     </main>
+
+    <div id="taskModal" class="fixed inset-0 z-50 hidden items-center justify-center bg-slate-950/80 p-4">
+      <div class="w-full max-w-3xl rounded-2xl border border-slate-700 bg-slate-900 p-4 shadow-2xl">
+        <div class="mb-3 flex items-center justify-between">
+          <h3 id="taskTitle" class="text-lg font-semibold">Ejecutando...</h3>
+          <button id="taskCloseBtn" class="btn-secondary">Cerrar</button>
+        </div>
+        <pre id="taskOutput" class="input min-h-52 whitespace-pre-wrap">Iniciando tarea...</pre>
+      </div>
+    </div>
+
     <script src="/static/app.js"></script>
   </body>
   </html>

@@ -19,11 +19,77 @@ const api = async (url, method = "GET", body = null) => {
     },
     body: body ? JSON.stringify(body) : null,
   });
-  const data = await response.json();
+  const raw = await response.text();
+  let data = {};
+  try {
+    data = raw ? JSON.parse(raw) : {};
+  } catch {
+    data = { ok: false, error: raw || `HTTP ${response.status}` };
+  }
   if (!response.ok || data.ok === false) {
     throw new Error(data.error || `HTTP ${response.status}`);
   }
   return data;
+};
+
+const taskModal = {
+  root: () => el("taskModal"),
+  title: () => el("taskTitle"),
+  output: () => el("taskOutput"),
+};
+
+const openTaskModal = (title) => {
+  taskModal.title().textContent = title;
+  taskModal.output().textContent = "Iniciando tarea...";
+  taskModal.root().classList.remove("hidden");
+  taskModal.root().classList.add("flex");
+};
+
+const closeTaskModal = () => {
+  taskModal.root().classList.add("hidden");
+  taskModal.root().classList.remove("flex");
+};
+
+const stringifyTaskData = (value, depth = 0) => {
+  if (value === null || value === undefined) return "";
+  if (typeof value === "string") return value;
+  if (depth > 3) return "";
+  if (typeof value !== "object") return String(value);
+  const lines = [];
+  for (const [key, val] of Object.entries(value)) {
+    if (["stdout", "stderr", "error", "message", "status"].includes(key) && typeof val === "string" && val.trim()) {
+      lines.push(`${key}: ${val}`);
+    } else if (typeof val === "object" && val !== null) {
+      const nested = stringifyTaskData(val, depth + 1);
+      if (nested) lines.push(`${key}:\n${nested}`);
+    }
+  }
+  return lines.join("\n").trim();
+};
+
+const runTaskAction = async (title, fn) => {
+  openTaskModal(title);
+  const startedAt = new Date();
+  try {
+    taskModal.output().textContent = "Ejecutando...";
+    const result = await fn();
+    const body = stringifyTaskData(result);
+    const duration = ((Date.now() - startedAt.getTime()) / 1000).toFixed(1);
+    taskModal.output().textContent = [
+      "Estado: abierto con exito",
+      `Duracion: ${duration}s`,
+      body || "Sin salida adicional",
+    ].join("\n\n");
+    setTimeout(closeTaskModal, 1800);
+    return result;
+  } catch (error) {
+    taskModal.output().textContent = [
+      "Estado: error",
+      String(error.message || error),
+      "Revisa logs si el problema persiste: journalctl -u mi-panel -n 120 --no-pager",
+    ].join("\n\n");
+    throw error;
+  }
 };
 
 const showCopyBlock = (text) => {
@@ -223,6 +289,11 @@ el("loginBtn").addEventListener("click", async () => {
   }
 });
 
+el("taskCloseBtn").addEventListener("click", closeTaskModal);
+el("taskModal").addEventListener("click", (event) => {
+  if (event.target && event.target.id === "taskModal") closeTaskModal();
+});
+
 el("refreshMetricsBtn").addEventListener("click", refreshMetrics);
 el("refreshBandwidthBtn").addEventListener("click", refreshBandwidth);
 el("bandwidthRange").addEventListener("change", refreshBandwidth);
@@ -289,118 +360,65 @@ el("copyBtn").addEventListener("click", async () => {
 });
 
 el("bbrBtn").addEventListener("click", async () => {
-  try {
-    await api("/api/system/tuning/bbr", "POST");
-    alert("BBR aplicado");
-  } catch (e) {
-    alert(e.message);
-  }
+  await runTaskAction("Activando TCP BBR", () => api("/api/system/tuning/bbr", "POST")).catch(() => {});
 });
 
 el("cleanBtn").addEventListener("click", async () => {
-  try {
-    await api("/api/system/cleanup", "POST");
-    alert("Limpieza ejecutada");
-  } catch (e) {
-    alert(e.message);
-  }
+  await runTaskAction("Limpiando RAM y logs", () => api("/api/system/cleanup", "POST")).catch(() => {});
 });
 
 el("memBoostBtn").addEventListener("click", async () => {
-  try {
-    await api("/api/system/memory/boost", "POST");
-    alert("Zram/Swap revisado");
-  } catch (e) {
-    alert(e.message);
-  }
+  await runTaskAction("Aplicando Zram/Swap", () => api("/api/system/memory/boost", "POST")).catch(() => {});
 });
 
 el("badvpnBtn").addEventListener("click", async () => {
-  try {
-    await api("/api/system/badvpn/install", "POST");
-    alert("BadVPN instalado/reiniciado");
-  } catch (e) {
-    alert(e.message);
-  }
+  await runTaskAction("Instalando BadVPN", () => api("/api/system/badvpn/install", "POST")).catch(() => {});
 });
 
 el("wstBtn").addEventListener("click", async () => {
-  try {
-    await api("/api/system/ws-tunnel/install", "POST");
-    alert("WS tunnel instalado/reiniciado");
-  } catch (e) {
-    alert(e.message);
-  }
+  await runTaskAction("Instalando WebSocket tunnel", () => api("/api/system/ws-tunnel/install", "POST")).catch(() => {});
 });
 
 el("dropbearBtn").addEventListener("click", async () => {
-  try {
-    await api("/api/system/dropbear/install", "POST");
-    alert("Dropbear activo");
-  } catch (e) {
-    alert(e.message);
-  }
+  await runTaskAction("Activando Dropbear", () => api("/api/system/dropbear/install", "POST")).catch(() => {});
 });
 
 el("stunnelBtn").addEventListener("click", async () => {
-  try {
-    await api("/api/system/stunnel/install", "POST");
-    alert("Stunnel activo");
-  } catch (e) {
-    alert(e.message);
-  }
+  await runTaskAction("Activando SSL directo (Stunnel)", () => api("/api/system/stunnel/install", "POST")).catch(() => {});
 });
 
 el("backupBtn").addEventListener("click", async () => {
-  try {
-    const data = await api("/api/system/backup/run", "POST");
-    alert(`Backup generado: ${data.path || "ok"}`);
-  } catch (e) {
-    alert(e.message);
-  }
+  await runTaskAction("Generando backup SQLite", () => api("/api/system/backup/run", "POST")).catch(() => {});
 });
 
 el("autoupdateBtn").addEventListener("click", async () => {
-  try {
-    await api("/api/system/autoupdate/run", "POST");
-    alert("Actualizacion ejecutada. El panel puede reiniciarse unos segundos.");
-  } catch (e) {
-    alert(e.message);
-  }
+  await runTaskAction("Ejecutando actualizacion", () => api("/api/system/autoupdate/run", "POST")).catch(() => {});
 });
 
 el("applyProfileBtn").addEventListener("click", async () => {
-  try {
-    const mode = el("profileMode").value;
-    const domain = el("profileDomain").value.trim() || undefined;
-    const panel_port = Number(el("profilePanelPort").value || 0) || undefined;
-    await api("/api/system/profile/apply", "POST", { mode, domain, panel_port });
-    alert(`Perfil aplicado: ${mode}`);
-  } catch (e) {
-    alert(e.message);
-  }
+  const mode = el("profileMode").value;
+  const domain = el("profileDomain").value.trim() || undefined;
+  const panel_port = Number(el("profilePanelPort").value || 0) || undefined;
+  const titleByMode = {
+    ssl: "Activando SSL directo",
+    "ssl-payload": "Activando SSL + Payload",
+    v2ray: "Activando V2Ray/Xray",
+  };
+  await runTaskAction(titleByMode[mode] || "Aplicando perfil", () =>
+    api("/api/system/profile/apply", "POST", { mode, domain, panel_port })
+  ).catch(() => {});
 });
 
 el("fwOpenBtn").addEventListener("click", async () => {
-  try {
-    const port = Number(el("fwPort").value);
-    const protocol = el("fwProtocol").value;
-    await api("/api/system/firewall/open", "POST", { port, protocol });
-    alert(`Puerto ${port}/${protocol} abierto`);
-  } catch (e) {
-    alert(e.message);
-  }
+  const port = Number(el("fwPort").value);
+  const protocol = el("fwProtocol").value;
+  await runTaskAction(`Abriendo puerto ${port}/${protocol}`, () => api("/api/system/firewall/open", "POST", { port, protocol })).catch(() => {});
 });
 
 el("fwCloseBtn").addEventListener("click", async () => {
-  try {
-    const port = Number(el("fwPort").value);
-    const protocol = el("fwProtocol").value;
-    await api("/api/system/firewall/close", "POST", { port, protocol });
-    alert(`Puerto ${port}/${protocol} cerrado`);
-  } catch (e) {
-    alert(e.message);
-  }
+  const port = Number(el("fwPort").value);
+  const protocol = el("fwProtocol").value;
+  await runTaskAction(`Cerrando puerto ${port}/${protocol}`, () => api("/api/system/firewall/close", "POST", { port, protocol })).catch(() => {});
 });
 
 el("fwStatusBtn").addEventListener("click", async () => {
@@ -413,13 +431,8 @@ el("fwStatusBtn").addEventListener("click", async () => {
 });
 
 el("expireBtn").addEventListener("click", async () => {
-  try {
-    await api("/api/system/expire/run", "POST");
-    await refreshTables();
-    alert("Tarea de expiracion completada");
-  } catch (e) {
-    alert(e.message);
-  }
+  const result = await runTaskAction("Procesando expiraciones", () => api("/api/system/expire/run", "POST")).catch(() => null);
+  if (result) await refreshTables();
 });
 
 el("newAccBtn").addEventListener("click", async () => {
