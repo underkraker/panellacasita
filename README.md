@@ -43,6 +43,12 @@ Tambien aplica hardening inicial:
 - panel interno en puerto secreto (`127.0.0.1`)
 - servicios persistentes por systemd
 
+Deploy instantaneo por push (opcional):
+- Endpoint: `POST /api/webhook/github`
+- Firma: `X-Hub-Signature-256` (HMAC SHA256 con `DEPLOY_WEBHOOK_SECRET`)
+- Evento esperado: `push` sobre rama `PANEL_REPO_BRANCH`
+- Al llegar push valido, dispara `mi-panel-autoupdate.service`
+
 Luego editar `/opt/panel-admin/.env` con:
 - `VPS_PUBLIC_IP`
 - `XRAY_REALITY_PRIVATE_KEY`, `XRAY_REALITY_PUBLIC_KEY`, `XRAY_REALITY_SHORT_ID`

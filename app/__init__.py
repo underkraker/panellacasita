@@ -6,6 +6,7 @@ from app.routes.firewall_routes import firewall_bp
 from app.routes.nginx_routes import nginx_bp
 from app.routes.system_routes import system_bp
 from app.routes.subscription_routes import subscription_bp
+from app.routes.webhook_routes import webhook_bp
 from app.routes.user_routes import users_bp
 from app.routes.web_routes import web_bp
 from app.routes.xray_routes import xray_bp
@@ -27,4 +28,5 @@ def create_app() -> Flask:
     app.register_blueprint(xray_bp, url_prefix="/api/xray")
     app.register_blueprint(users_bp, url_prefix="/api/users")
     app.register_blueprint(subscription_bp, url_prefix="/api/subscription")
+    app.register_blueprint(webhook_bp, url_prefix="/api/webhook")
     return app

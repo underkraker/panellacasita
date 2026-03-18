@@ -152,6 +152,7 @@ python3.12 -m venv "${APP_ROOT}/.venv"
 
 PUBLIC_IP="$(curl -4 -s https://api.ipify.org || true)"
 API_KEY="$(openssl rand -hex 24)"
+DEPLOY_WEBHOOK_SECRET="$(openssl rand -hex 32)"
 
 cat >"${APP_ROOT}/.env" <<EOF
 PANEL_HOST=127.0.0.1
@@ -159,6 +160,8 @@ PANEL_PORT=18080
 PANEL_SECRET_PORT=18080
 PANEL_PUBLIC_PORT=${PANEL_PORT}
 PANEL_DOMAIN=${DOMAIN}
+PANEL_REPO_BRANCH=${REPO_BRANCH}
+DEPLOY_WEBHOOK_SECRET=${DEPLOY_WEBHOOK_SECRET}
 PANEL_API_KEY=${API_KEY}
 PANEL_ADMIN_USER=${ADMIN_USER}
 PANEL_ADMIN_PASS=${ADMIN_PASS}
@@ -390,4 +393,9 @@ echo "- Xray: $(systemctl is-active xray || true)"
 echo "- SSH: $(systemctl is-active ssh || true)"
 echo "- Websocket: $(systemctl is-active mi-panel-ws || true)"
 echo "- AutoUpdate: $(systemctl is-active mi-panel-autoupdate.timer || true)"
+echo ""
+echo "Webhook GitHub (deploy instantaneo):"
+echo "- URL: https://${DOMAIN}:${PANEL_PORT}/api/webhook/github"
+echo "- Secret: ${DEPLOY_WEBHOOK_SECRET}"
+echo "- Evento: push"
 echo "=============================================="

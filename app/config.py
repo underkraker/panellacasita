@@ -14,6 +14,8 @@ class Settings:
     PANEL_SECRET_PORT = int(os.getenv("PANEL_SECRET_PORT", "18080"))
     PANEL_PUBLIC_PORT = int(os.getenv("PANEL_PUBLIC_PORT", "2026"))
     PANEL_DOMAIN = os.getenv("PANEL_DOMAIN", "")
+    PANEL_REPO_BRANCH = os.getenv("PANEL_REPO_BRANCH", "main")
+    DEPLOY_WEBHOOK_SECRET = os.getenv("DEPLOY_WEBHOOK_SECRET", "")
 
     UFW_BIN = os.getenv("UFW_BIN", "/usr/sbin/ufw")
     SYSTEMCTL_BIN = os.getenv("SYSTEMCTL_BIN", "/bin/systemctl")
